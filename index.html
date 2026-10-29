@@ -1,0 +1,619 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>OA Cartilage Grader</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a specimen bench. Slide viewer on the left, grading report on the right; stacks on phones. */
+:root {
+  --bg: #f2f4f5;          /* slide glass */
+  --surface: #ffffff;
+  --ink: #182126;
+  --muted: #5b6870;
+  --line: #d6dde1;
+  --safranin: #a8242c;    /* accent: Safranin-O red */
+  --fastgreen: #22786f;   /* Fast Green counterstain */
+  --hematox: #5a4a8c;     /* hematoxylin violet */
+  --amber: #a5670f;
+  --sev-mild: var(--fastgreen);
+  --sev-mod: var(--amber);
+  --sev-severe: var(--safranin);
+  --shade: rgba(24, 33, 38, .05);
+  --f-display: "Spectral", Georgia, "Times New Roman", serif;
+  --f-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #101417; --surface: #171d21; --ink: #e5ebee; --muted: #93a1a9; --line: #2a343a;
+  --safranin: #e2585f; --fastgreen: #4db3a8; --hematox: #a597dc; --amber: #e0a24a; --shade: rgba(0,0,0,.25);
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #101417; --surface: #171d21; --ink: #e5ebee; --muted: #93a1a9; --line: #2a343a;
+  --safranin: #e2585f; --fastgreen: #4db3a8; --hematox: #a597dc; --amber: #e0a24a; --shade: rgba(0,0,0,.25);
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 400 15px/1.55 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 20px; }
+
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 20px;
+  border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+h1 { font: 600 clamp(26px, 4vw, 34px)/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h1 .stain { color: var(--safranin); }
+.sub { margin: 4px 0 0; color: var(--muted); max-width: 62ch; }
+.proto { font: 500 11px/1 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 3px; padding: 6px 8px; white-space: nowrap; }
+
+.bench { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 860px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+
+.label { font: 500 11px/1.2 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+
+/* specimen slots */
+.slots { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 480px) { .slots { grid-template-columns: 1fr; } }
+.slot { position: relative; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; align-items: center;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px; cursor: pointer;
+  transition: border-color .15s; }
+.slot:hover, .slot.drag { border-color: var(--muted); }
+.slot:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.slot input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.slot .thumb { width: 56px; height: 56px; border-radius: 4px; background: var(--bg) center/cover no-repeat;
+  border: 1px solid var(--line); }
+.slot .name { font-weight: 600; display: flex; align-items: center; gap: 7px; }
+.slot .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.slot[data-stain="SafO"] .dot { background: var(--safranin); }
+.slot[data-stain="HE"] .dot { background: var(--hematox); }
+.slot .file { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot .clear { position: relative; z-index: 2; justify-self: end; grid-column: 2; }
+
+/* viewer */
+.viewer { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.viewer-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.tabs { display: flex; gap: 4px; }
+.tab { font: 500 13px var(--f-body); color: var(--muted); background: none; border: 1px solid transparent;
+  border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+.tab[aria-selected="true"] { color: var(--ink); border-color: var(--line); background: var(--bg); }
+.tab:disabled { opacity: .4; cursor: default; }
+.toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.stage { position: relative; aspect-ratio: 1 / 1; max-width: 100%; background: #fbfbfa; }
+.stage canvas { width: 100%; height: 100%; display: block; object-fit: contain; }
+.stage .empty { position: absolute; inset: 0; display: grid; place-items: center; color: #5b6870; font-size: 14px; text-align: center; padding: 20px; }
+.legend { padding: 10px 12px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); }
+
+/* report */
+.report { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 20px; display: grid; gap: 18px; }
+.score-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; }
+.score { font: 600 clamp(56px, 9vw, 76px)/.9 var(--f-display); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.score small { font: 400 15px var(--f-mono); color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+.chip { font: 600 13px/1 var(--f-body); letter-spacing: .04em; text-transform: uppercase; padding: 7px 10px 6px;
+  border-radius: 3px; color: var(--surface); background: var(--muted); }
+.chip[data-band="Mild"] { background: var(--sev-mild); }
+.chip[data-band="Moderate"] { background: var(--sev-mod); }
+.chip[data-band="Severe"] { background: var(--sev-severe); }
+.status { min-height: 22px; font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; flex: 1; max-width: 220px; }
+.bar i { display: block; height: 100%; width: 0; background: var(--ink); transition: width .2s; }
+
+/* OARSI scale */
+.scale svg { width: 100%; height: auto; display: block; overflow: visible; }
+.scale text { font: 400 11px var(--f-mono); fill: var(--muted); }
+.scale .band-label { font: 500 11px var(--f-body); }
+
+dl.facts { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; font-size: 14px; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--f-mono); font-size: 13px; }
+.note { font-size: 13px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 10px; margin: 0; }
+.warn { border-left-color: var(--amber); color: var(--ink); }
+
+.method { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px 28px; }
+.method h2 { font: 600 17px/1.3 var(--f-display); margin: 0 0 4px; }
+.method p { margin: 0; font-size: 14px; color: var(--muted); }
+table.cv { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+table.cv th, table.cv td { text-align: right; padding: 5px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.cv th:first-child, table.cv td:first-child { text-align: left; }
+table.cv thead th { font: 500 11px var(--f-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+table.cv tr.used td { font-weight: 600; }
+.tablewrap { overflow-x: auto; }
+
+button.ghost { font: 500 13px var(--f-body); color: var(--ink); background: none; border: 1px solid var(--line);
+  border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+button.ghost:hover { border-color: var(--muted); }
+button:focus-visible, .tab:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+footer { font-size: 12px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>OA Cartilage <span class="stain">Grader</span></h1>
+      <p class="sub">Estimates the OARSI histopathology score (0–24) of an osteochondral section from a Safranin-O image, with H&amp;E optional. Runs entirely in your browser; images are never uploaded.</p>
+    </div>
+    <span class="proto">Research prototype · not for diagnosis</span>
+  </header>
+
+  <p class="note warn" id="placeholder" hidden><strong>Draft:</strong> this page is running placeholder model weights, so the scores below are meaningless. The trained model will replace them.</p>
+
+  <div class="bench">
+    <section style="display:grid; gap:12px; min-width:0">
+      <div class="slots">
+        <label class="slot" data-stain="SafO" id="slot-SafO">
+          <input type="file" id="file-SafO" accept="image/jpeg,image/png,image/webp" aria-label="Safranin-O image">
+          <span class="thumb"></span>
+          <span style="min-width:0"><span class="name"><span class="dot"></span>Safranin-O</span><span class="file">Drop or choose a JPG/PNG</span></span>
+        </label>
+        <label class="slot" data-stain="HE" id="slot-HE">
+          <input type="file" id="file-HE" accept="image/jpeg,image/png,image/webp" aria-label="H&amp;E image">
+          <span class="thumb"></span>
+          <span style="min-width:0"><span class="name"><span class="dot"></span>H&amp;E <span style="font-weight:400;color:var(--muted)">(optional)</span></span><span class="file">Drop or choose a JPG/PNG</span></span>
+        </label>
+      </div>
+      <div class="viewer">
+        <div class="viewer-bar">
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" id="tab-SafO" aria-selected="true" data-stain="SafO">Safranin-O</button>
+            <button class="tab" role="tab" id="tab-HE" aria-selected="false" data-stain="HE">H&amp;E</button>
+          </div>
+          <label class="toggle"><input type="checkbox" id="show-tiles" checked> Show analysed tiles</label>
+        </div>
+        <div class="stage"><canvas id="view" width="1024" height="1024"></canvas><div class="empty" id="empty">No image loaded</div></div>
+        <div class="legend" id="legend">Outlined squares are the 224 px cartilage tiles the model reads. They are chosen by stain colour.</div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+        <button class="ghost" id="load-example">Load example: P001 Lateral</button>
+        <span class="mono" style="color:var(--muted)" id="example-note"></span>
+      </div>
+    </section>
+
+    <section class="report" aria-live="polite">
+      <div>
+        <p class="label">Estimated OARSI score</p>
+        <div class="score-row">
+          <div class="score" id="score">–<small>/ 24</small></div>
+          <span class="chip" id="band" hidden></span>
+        </div>
+        <div class="status" id="status"><span id="status-text">Loading model…</span><span class="bar" id="bar" hidden><i></i></span></div>
+      </div>
+      <div class="scale" id="scale"></div>
+      <dl class="facts" id="facts"></dl>
+      <p class="note" id="note"></p>
+    </section>
+  </div>
+
+  <section class="method">
+    <div>
+      <h2>How it works</h2>
+      <p>The cartilage is located by stain colour (red proteoglycan in Safranin-O, violet matrix in H&amp;E), including pale, depleted cartilage next to stained areas. Sixteen 224 px tiles per image are read by a frozen DINOv2 ViT-S/14 network. A ridge regression maps the averaged features, plus two stain measurements, to an OARSI score. With both stains it uses the combined model, which tested best.</p>
+    </div>
+    <div>
+      <h2>How it was tested</h2>
+      <p id="test-text">Trained on 58 knee compartments from 29 patients, each scored by 3 scorers × 3 reads. Accuracy was measured leaving one patient out at a time, so every test case is a patient the model never saw. MAE is the average gap, in OARSI points, between the estimate and the expert mean.</p>
+      <p style="margin-top:8px">The browser runs an 8-bit compressed copy of the network. On the training images its estimates differ from the full-precision model by 0.26 points on average.</p>
+    </div>
+    <div style="min-width:0">
+      <h2>Held-out accuracy</h2>
+      <div class="tablewrap"><table class="cv" id="cv"></table></div>
+    </div>
+  </section>
+  <footer>OARSI grade × stage scoring (0–24). Bands used here: Mild &lt; 5, Moderate 5–8, Severe ≥ 8. Prototype built for a student research project; outputs are estimates and not a clinical assessment.</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.wasm.min.js"></script>
+<script>
+/* Cartilage tile selection + regression head. Mirrors tiles.py from the training notebook. */
+(function (root) {
+  const P = { LONG_SIDE: 2048, TILE: 224, STRIDE: 112, TOP_K: 16, MIN_FRAC: 0.25, MASK_SCALE: 4, REGION_R: 15, MIN_REGION: 0.01 };
+
+  function hsvArrays(rgba, n) {
+    const h = new Float32Array(n), s = new Float32Array(n), v = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const r = rgba[4 * i] / 255, g = rgba[4 * i + 1] / 255, b = rgba[4 * i + 2] / 255;
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+      let hh = 0;
+      if (d > 1e-6) {
+        if (mx === r) hh = (((g - b) / d) % 6 + 6) % 6;
+        else if (mx === g) hh = (b - r) / d + 2;
+        else hh = (r - g) / d + 4;
+      }
+      h[i] = hh / 6; s[i] = mx > 1e-6 ? d / mx : 0; v[i] = mx;
+    }
+    return { h, s, v };
+  }
+
+  function stainMask(H, i, stain) {
+    const h = H.h[i], s = H.s[i], v = H.v[i];
+    if (stain === "SafO") return (h < 0.05 || h > 0.93) && s > 0.35 && v > 0.25;
+    return h > 0.62 && h < 0.88 && s > 0.10 && v > 0.30 && v < 0.97;
+  }
+  function faintMask(H, i, stain) {
+    const h = H.h[i], s = H.s[i], v = H.v[i];
+    if (stain === "SafO") return (h < 0.08 || h > 0.80) && s > 0.06 && v > 0.25;
+    return h > 0.58 && h < 0.92 && s > 0.05 && v > 0.25 && v < 0.98;
+  }
+
+  function integral(m, W, H) {
+    const ii = new Float64Array((W + 1) * (H + 1));
+    for (let y = 0; y < H; y++) {
+      let row = 0;
+      for (let x = 0; x < W; x++) {
+        row += m[y * W + x];
+        ii[(y + 1) * (W + 1) + x + 1] = ii[y * (W + 1) + x + 1] + row;
+      }
+    }
+    return ii;
+  }
+  const rect = (ii, W, x0, y0, x1, y1) =>
+    ii[y1 * (W + 1) + x1] - ii[y0 * (W + 1) + x1] - ii[y1 * (W + 1) + x0] + ii[y0 * (W + 1) + x0];
+
+  function grow(mask, W, H, r) {   // box_mean(mask, r) > 0.05
+    const ii = integral(mask, W, H), out = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) {
+      const y0 = Math.max(0, y - r), y1 = Math.min(H, y + r + 1);
+      for (let x = 0; x < W; x++) {
+        const x0 = Math.max(0, x - r), x1 = Math.min(W, x + r + 1);
+        out[y * W + x] = rect(ii, W, x0, y0, x1, y1) / ((y1 - y0) * (x1 - x0)) > 0.05 ? 1 : 0;
+      }
+    }
+    return out;
+  }
+
+  /* small: RGBA of the 1/MASK_SCALE copy. Returns tile positions in full-size pixels. */
+  function analyse(small, W, H, stain, topK = P.TOP_K) {
+    const n = W * H, HS = hsvArrays(small, n);
+    const stained = new Uint8Array(n), faint = new Uint8Array(n), tissue = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      stained[i] = stainMask(HS, i, stain) ? 1 : 0;
+      faint[i] = faintMask(HS, i, stain) ? 1 : 0;
+      tissue[i] = HS.s[i] > 0.08 || HS.v[i] < 0.80 ? 1 : 0;
+    }
+    const mean = m => { let t = 0; for (let i = 0; i < n; i++) t += m[i]; return t / n; };
+    let level = 0, region = grow(stained, W, H, P.REGION_R).map((g, i) => g & tissue[i]);
+    if (mean(region) < P.MIN_REGION) { region = grow(faint, W, H, P.REGION_R).map((g, i) => g & tissue[i]); level = 1; }
+    if (mean(region) < P.MIN_REGION) { region = tissue.slice(); level = 2; }
+
+    // colour stats: stained share of region, mean saturation of stained pixels
+    let rN = 0, rS = 0, sN = 0, sSum = 0;
+    for (let i = 0; i < n; i++) {
+      if (region[i]) { rN++; rS += stained[i]; }
+      if (stained[i]) { sN++; sSum += HS.s[i]; }
+    }
+    const colour = [rN ? rS / rN : 0, sN ? sSum / sN : 0];
+
+    const ii = integral(region, W, H), t = P.TILE / P.MASK_SCALE, st = P.STRIDE / P.MASK_SCALE;
+    const cands = [];
+    for (let y = 0; y + t <= H; y += st)
+      for (let x = 0; x + t <= W; x += st)
+        cands.push({ f: rect(ii, W, x, y, x + t, y + t) / (t * t), x, y });
+    cands.sort((a, b) => b.f - a.f || a.y - b.y || a.x - b.x);
+    const good = cands.filter(c => c.f >= P.MIN_FRAC);
+    const picked = (good.length ? good : cands).slice(0, topK)
+      .map(c => ({ x: c.x * P.MASK_SCALE, y: c.y * P.MASK_SCALE, f: c.f }));
+    return { tiles: picked, colour, level, region, W, H };
+  }
+
+  /* RGBA crops (TILE x TILE each) -> NCHW Float32 normalised */
+  function toTensor(crops, mean, std) {
+    const T = P.TILE, plane = T * T, out = new Float32Array(crops.length * 3 * plane);
+    crops.forEach((rgba, k) => {
+      const base = k * 3 * plane;
+      for (let i = 0; i < plane; i++)
+        for (let c = 0; c < 3; c++)
+          out[base + c * plane + i] = (rgba[4 * i + c] / 255 - mean[c]) / std[c];
+    });
+    return out;
+  }
+
+  /* Bilinear (triangle-filter, antialiased) resize identical in method to Pillow's Image.BILINEAR. RGBA in/out. */
+  function coeffs(inSize, outSize) {
+    const scale = inSize / outSize, fscale = Math.max(scale, 1), support = 1 * fscale;
+    const ks = Math.ceil(support) * 2 + 1, bounds = new Int32Array(outSize * 2), k = new Float64Array(outSize * ks);
+    for (let i = 0; i < outSize; i++) {
+      const center = (i + 0.5) * scale;
+      let xmin = Math.max(Math.trunc(center - support + 0.5), 0);
+      let xmax = Math.min(Math.trunc(center + support + 0.5), inSize) - xmin;
+      let ww = 0;
+      for (let x = 0; x < xmax; x++) {
+        const t = Math.abs((x + xmin - center + 0.5) / fscale), w = t < 1 ? 1 - t : 0;
+        k[i * ks + x] = w; ww += w;
+      }
+      for (let x = 0; x < xmax; x++) if (ww) k[i * ks + x] /= ww;
+      bounds[2 * i] = xmin; bounds[2 * i + 1] = xmax;
+    }
+    return { ks, bounds, k };
+  }
+  function resize(src, W, H, w, h) {
+    const cx = coeffs(W, w), cy = coeffs(H, h);
+    const tmp = new Float32Array(w * H * 3), out = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < H; y++)
+      for (let i = 0; i < w; i++) {
+        const x0 = cx.bounds[2 * i], n = cx.bounds[2 * i + 1];
+        let r = 0, g = 0, b = 0;
+        for (let x = 0; x < n; x++) {
+          const c = cx.k[i * cx.ks + x], p = 4 * (y * W + x0 + x);
+          r += src[p] * c; g += src[p + 1] * c; b += src[p + 2] * c;
+        }
+        const q = 3 * (y * w + i);
+        tmp[q] = Math.min(255, Math.max(0, Math.round(r)));
+        tmp[q + 1] = Math.min(255, Math.max(0, Math.round(g)));
+        tmp[q + 2] = Math.min(255, Math.max(0, Math.round(b)));
+      }
+    for (let j = 0; j < h; j++) {
+      const y0 = cy.bounds[2 * j], n = cy.bounds[2 * j + 1];
+      for (let i = 0; i < w; i++) {
+        let r = 0, g = 0, b = 0;
+        for (let y = 0; y < n; y++) {
+          const c = cy.k[j * cy.ks + y], q = 3 * ((y0 + y) * w + i);
+          r += tmp[q] * c; g += tmp[q + 1] * c; b += tmp[q + 2] * c;
+        }
+        const p = 4 * (j * w + i);
+        out[p] = r; out[p + 1] = g; out[p + 2] = b; out[p + 3] = 255;
+      }
+    }
+    return out;
+  }
+  function crop(src, W, x0, y0, size) {
+    const out = new Uint8ClampedArray(size * size * 4);
+    for (let y = 0; y < size; y++) out.set(src.subarray(4 * ((y0 + y) * W + x0), 4 * ((y0 + y) * W + x0 + size)), 4 * y * size);
+    return out;
+  }
+
+  function predict(setup, vec) {
+    let y = setup.intercept;
+    for (let j = 0; j < vec.length; j++) y += ((vec[j] - setup.scaler_mean[j]) / setup.scaler_scale[j]) * setup.coef[j];
+    return Math.min(24, Math.max(0, y));
+  }
+
+  function band(bands, x) {
+    for (const [lo, hi, name] of bands) if (x >= lo && x < hi) return name;
+    return bands[bands.length - 1][2];
+  }
+
+  /* Full pipeline on decoded RGBA pixels: resize, analyse, crop tiles. */
+  function prepare(rgba, W0, H0, stain) {
+    const s = P.LONG_SIDE / Math.max(W0, H0);
+    const W = Math.round(W0 * s), H = Math.round(H0 * s);
+    const big = resize(rgba, W0, H0, W, H);
+    const w = Math.floor(W / P.MASK_SCALE), h = Math.floor(H / P.MASK_SCALE);
+    const small = resize(big, W, H, w, h);
+    const a = analyse(small, w, h, stain);
+    a.crops = a.tiles.map(t => crop(big, W, t.x, t.y, P.TILE));
+    a.big = big; a.bigW = W; a.bigH = H;
+    return a;
+  }
+
+  root.OACore = { P, analyse, toTensor, predict, band, resize, crop, prepare };
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+(() => {
+  const OA = window.OACore;
+  const $ = id => document.getElementById(id);
+  const state = { head: null, session: null, modelError: null, imgs: { SafO: null, HE: null }, view: "SafO", busy: 0 };
+  const BANDCOL = { Mild: "--sev-mild", Moderate: "--sev-mod", Severe: "--sev-severe" };
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  function status(text, frac) {
+    $("status-text").textContent = text;
+    $("bar").hidden = frac == null;
+    if (frac != null) $("bar").firstElementChild.style.width = Math.round(frac * 100) + "%";
+  }
+
+  /* ---------- model ---------- */
+  async function loadModel() {
+    state.head = await (await fetch("model/head.json")).json();
+    $("placeholder").hidden = !state.head.placeholder;
+    renderCV(null);
+    try {
+      if (!window.ort) throw new Error("runtime script blocked");
+      ort.env.wasm.numThreads = 1;
+      ort.env.wasm.wasmPaths = {
+        mjs: new URL("ort-wasm-simd-threaded.mjs", location.href).href,
+        wasm: new URL("ort-wasm-simd-threaded.wasm", location.href).href };
+      const parts = state.head.web.parts, bufs = [];
+      let got = 0;
+      for (const p of parts) {
+        status(`Loading model ${got + 1}/${parts.length}…`, got / parts.length);
+        const b64 = await (await fetch("model/" + p)).text(), bin = atob(b64.trim()), u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        bufs.push(u);
+        got++;
+      }
+      const all = new Uint8Array(bufs.reduce((n, b) => n + b.length, 0));
+      let o = 0; for (const b of bufs) { all.set(b, o); o += b.length; }
+      status("Starting model…", 1);
+      state.session = await ort.InferenceSession.create(all, { executionProviders: ["wasm"] });
+      status("Model ready");
+    } catch (e) {
+      state.modelError = e;
+      console.warn("Deep model unavailable, using stain-colour model:", e);
+      status("Deep model unavailable in this browser; using the stain-colour model");
+    }
+  }
+
+  /* ---------- images ---------- */
+  async function decode(blob) {
+    const bmp = await createImageBitmap(blob, { colorSpaceConversion: "none", premultiplyAlpha: "none" });
+    const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
+    const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(bmp, 0, 0);
+    return { rgba: g.getImageData(0, 0, bmp.width, bmp.height).data, W: bmp.width, H: bmp.height };
+  }
+
+  async function setImage(stain, blob, name) {
+    const run = ++state.busy;
+    const slot = $("slot-" + stain);
+    slot.querySelector(".file").textContent = name;
+    const url = URL.createObjectURL(blob);
+    slot.querySelector(".thumb").style.backgroundImage = `url(${url})`;
+    status(`Reading ${stain === "SafO" ? "Safranin-O" : "H&E"} image…`);
+    await new Promise(r => setTimeout(r, 20));
+    try {
+      const { rgba, W, H } = await decode(blob);
+      const prep = OA.prepare(rgba, W, H, stain);
+      state.imgs[stain] = { prep, name, deep: null };
+      state.view = stain; renderTabs(); draw();
+      await grade(run);
+    } catch (e) {
+      console.error(e);
+      status("Could not read that file. Use a JPG or PNG export of the slide (TIF is not supported by browsers).");
+    }
+  }
+
+  async function embed(img) {
+    if (img.deep || !state.session) return img.deep;
+    const crops = img.prep.crops, dim = state.head.web.dim, feats = new Float32Array(dim);
+    for (let i = 0; i < crops.length; i += 4) {
+      status(`Reading tiles ${i + 1}–${Math.min(i + 4, crops.length)} of ${crops.length}…`, i / crops.length);
+      const part = crops.slice(i, i + 4);
+      const t = new ort.Tensor("float32", OA.toTensor(part, state.head.mean, state.head.std), [part.length, 3, OA.P.TILE, OA.P.TILE]);
+      const out = (await state.session.run({ tiles: t })).features.data;
+      for (let k = 0; k < part.length; k++) for (let j = 0; j < dim; j++) feats[j] += out[k * dim + j] / crops.length;
+    }
+    img.deep = feats;
+    return feats;
+  }
+
+  function chooseSetup() {
+    const have = s => !!state.imgs[s];
+    const S = state.head.setups;
+    const usable = Object.entries(S).filter(([n, s]) =>
+      s.inputs.every(([st, part]) => have(st) && (part === "colour" || state.session)));
+    if (!usable.length) return null;
+    const deep = usable.filter(([, s]) => s.inputs.some(([, p]) => p !== "colour"));
+    const pool = deep.length ? deep : usable;
+    return pool.sort((a, b) => a[1].cv.MAE - b[1].cv.MAE)[0];
+  }
+
+  async function grade(run) {
+    if (!state.head) return;
+    const pick = chooseSetup();
+    if (!pick) { status(state.imgs.HE && !state.session ? "Add a Safranin-O image to grade." : "Add an image to grade."); return; }
+    const [name, setup] = pick;
+    const vec = [];
+    for (const [stain, part] of setup.inputs) {
+      const img = state.imgs[stain];
+      if (part !== "colour") vec.push(...await embed(img));
+      vec.push(...img.prep.colour);
+      if (run !== state.busy) return;   // a newer image arrived
+    }
+    const y = OA.predict(setup, vec);
+    showResult(y, name, setup);
+  }
+
+  /* ---------- output ---------- */
+  function showResult(y, name, setup) {
+    const head = state.head, b = OA.band(head.bands, y), mae = setup.cv.MAE;
+    $("score").innerHTML = `${y.toFixed(1)}<small>/ 24</small>`;
+    $("band").hidden = false; $("band").dataset.band = b; $("band").textContent = b;
+    status(`Graded with setup ${name}`);
+    drawScale(y, mae);
+    const s = state.imgs.SafO, h = state.imgs.HE;
+    const rows = [];
+    if (s) rows.push(["Safranin-O stained matrix", `${Math.round(s.prep.colour[0] * 100)}% of cartilage region`]);
+    if (h) rows.push(["H&E violet matrix", `${Math.round(h.prep.colour[0] * 100)}% of cartilage region`]);
+    rows.push(["Typical error", `± ${mae.toFixed(1)} OARSI points (held-out patients)`]);
+    rows.push(["Expert spread", `± ${head.expert_mae.toFixed(1)} points between a single read and consensus`]);
+    $("facts").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    const lv = [s, h].filter(Boolean).map(i => i.prep.level);
+    const warn = Math.max(...lv);
+    $("note").className = "note" + (warn ? " warn" : "");
+    $("note").textContent = warn === 2
+      ? "Little stained cartilage was found, so tiles were taken from any tissue. Check the outlined tiles sit on cartilage before trusting this score."
+      : warn === 1
+      ? "Staining is faint, which usually means proteoglycan loss. Tiles were chosen from weakly stained tissue; check they sit on cartilage."
+      : `The score is a model estimate. Scores near a band boundary (5 or 8) can fall in either band.`;
+    renderCV(name);
+  }
+
+  function drawScale(y, mae) {
+    const W = 560, H = 74, x0 = 8, x1 = W - 8, max = 24, X = v => x0 + (x1 - x0) * Math.min(v, max) / max;
+    const bands = state.head.bands.map(([lo, hi, n]) => [lo, Math.min(hi, max), n]);
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="OARSI scale from 0 to 24 with the estimate at ${y.toFixed(1)}">`;
+    for (const [lo, hi, n] of bands) {
+      const c = css(BANDCOL[n] || "--muted");
+      s += `<rect x="${X(lo)}" y="22" width="${X(hi) - X(lo)}" height="10" fill="${c}" opacity=".85"/>`;
+      s += `<text class="band-label" x="${(X(lo) + X(hi)) / 2}" y="14" text-anchor="middle" fill="${c}">${n}</text>`;
+    }
+    for (let t = 0; t <= max; t += 4) s += `<text x="${X(t)}" y="50" text-anchor="middle">${t}</text>`;
+    const lo = Math.max(0, y - mae), hi = Math.min(max, y + mae), ink = css("--ink");
+    s += `<rect x="${X(lo)}" y="58" width="${X(hi) - X(lo)}" height="4" rx="2" fill="${ink}" opacity=".25"/>`;
+    s += `<line x1="${X(y)}" x2="${X(y)}" y1="18" y2="64" stroke="${ink}" stroke-width="2"/>`;
+    s += `<circle cx="${X(y)}" cy="27" r="5" fill="${css("--surface")}" stroke="${ink}" stroke-width="2"/>`;
+    s += `<text x="${X(y)}" y="74" text-anchor="middle" fill="${ink}">±${mae.toFixed(1)}</text></svg>`;
+    $("scale").innerHTML = s;
+  }
+
+  function renderCV(used) {
+    const S = state.head.setups;
+    const rows = Object.entries(S).map(([n, s]) => `<tr class="${n === used ? "used" : ""}"><td>${n}${n === used ? " ✓" : ""}</td>
+      <td>${s.cv.MAE.toFixed(2)}</td><td>${(s.cv.band_acc * 100).toFixed(0)}%</td><td>${(s.cv.Spearman ?? 0).toFixed(2)}</td></tr>`);
+    $("cv").innerHTML = `<thead><tr><th>Setup</th><th>MAE</th><th>Band acc.</th><th>Spearman</th></tr></thead><tbody>${rows.join("")}
+      <tr><td>Always predict the average</td><td>${state.head.floor_mae.toFixed(2)}</td><td>${(state.head.floor_band_acc * 100).toFixed(0)}%</td><td>–</td></tr>
+      <tr><td>Single expert read</td><td>${state.head.expert_mae.toFixed(2)}</td><td>–</td><td>–</td></tr></tbody>`;
+  }
+
+  function renderTabs() {
+    for (const st of ["SafO", "HE"]) {
+      const t = $("tab-" + st); t.disabled = !state.imgs[st]; t.setAttribute("aria-selected", String(state.view === st));
+    }
+  }
+
+  function draw() {
+    const img = state.imgs[state.view], c = $("view"), g = c.getContext("2d");
+    $("empty").hidden = !!img;
+    g.clearRect(0, 0, c.width, c.height);
+    if (!img) return;
+    const { big, bigW, bigH, tiles } = img.prep;
+    const k = Math.min(c.width / bigW, c.height / bigH), ox = (c.width - bigW * k) / 2, oy = (c.height - bigH * k) / 2;
+    if (!img.bitmap) {
+      const cc = document.createElement("canvas"); cc.width = bigW; cc.height = bigH;
+      cc.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(big), bigW, bigH), 0, 0);
+      img.bitmap = cc;
+    }
+    g.imageSmoothingQuality = "high";
+    g.drawImage(img.bitmap, ox, oy, bigW * k, bigH * k);
+    if ($("show-tiles").checked) {
+      g.lineWidth = 2; g.strokeStyle = "#111";
+      for (const t of tiles) { g.strokeStyle = "rgba(17,17,17,.85)"; g.strokeRect(ox + t.x * k + .5, oy + t.y * k + .5, OA.P.TILE * k, OA.P.TILE * k); }
+      g.lineWidth = 1; g.strokeStyle = "rgba(255,255,255,.9)";
+      for (const t of tiles) g.strokeRect(ox + t.x * k + 2, oy + t.y * k + 2, OA.P.TILE * k - 3, OA.P.TILE * k - 3);
+    }
+  }
+
+  /* ---------- wiring ---------- */
+  for (const st of ["SafO", "HE"]) {
+    const input = $("file-" + st), slot = $("slot-" + st);
+    input.addEventListener("change", () => input.files[0] && setImage(st, input.files[0], input.files[0].name));
+    slot.addEventListener("dragover", e => { e.preventDefault(); slot.classList.add("drag"); });
+    slot.addEventListener("dragleave", () => slot.classList.remove("drag"));
+    slot.addEventListener("drop", e => { e.preventDefault(); slot.classList.remove("drag");
+      const f = e.dataTransfer.files[0]; if (f) setImage(st, f, f.name); });
+    $("tab-" + st).addEventListener("click", () => { if (state.imgs[st]) { state.view = st; renderTabs(); draw(); } });
+  }
+  $("show-tiles").addEventListener("change", draw);
+
+  async function loadExample() {
+    $("example-note").textContent = "";
+    state.imgs = { SafO: null, HE: null };
+    for (const [st, f] of [["SafO", "examples/safo.jpg"], ["HE", "examples/he.jpg"]]) {
+      const blob = await (await fetch(f)).blob();
+      await setImage(st, blob, f.split("/")[1] === "safo.jpg" ? "P001 Lateral · SafO section 2" : "P001 Lateral · HE section 1");
+    }
+    state.view = "SafO"; renderTabs(); draw();
+    const exp = state.head.example_truth;
+    if (exp != null) $("example-note").textContent = `Expert mean for this compartment: ${exp.toFixed(1)}`;
+  }
+  $("load-example").addEventListener("click", loadExample);
+
+  renderTabs();
+  loadModel().then(loadExample).catch(e => { console.error(e); status("Could not load the model files."); });
+})();
+</script>
+
+</body></html>
